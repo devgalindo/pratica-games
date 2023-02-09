@@ -2,11 +2,20 @@ import app from "app";
 import prisma from "config/database";
 import httpStatus from "http-status";
 import supertest from "supertest";
+import { createConsole } from "./factories/console.factory";
+import { faker } from "@faker-js/faker"
+import { createGame } from "./factories/game.factory";
 
 const api = supertest(app)
 
 beforeEach(async () => {
     await prisma.game.deleteMany()
+    await prisma.console.deleteMany()
+})
+
+beforeAll(async () => {
+    await prisma.game.deleteMany()
+    await prisma.console.deleteMany()
 })
 
 describe("GET /consoles", () => {
@@ -16,10 +25,10 @@ describe("GET /consoles", () => {
         expect(response.body).toHaveLength(0)
         expect(response.body).toEqual([])
     }) 
-    it("should respond a consoles array", async () => {
-        //criar console
-        //criar console
-        const response = await api.get("/console")
+    it("should respond a console array", async () => {
+        await createConsole()
+        await createConsole()
+        const response = await api.get("/consoles")
 
         expect(response.body).toHaveLength(2)
         expect(response.body).toEqual(expect.arrayContaining([
@@ -31,57 +40,56 @@ describe("GET /consoles", () => {
     })
 })
 
-describe("GET /games/:id", () => {
+describe("GET /consoles/:id", () => {
     it("should respond with status 404 if console's id does not exist", async () => {
         const response = await api.get("/consoles/1")
 
         expect(response.status).toBe(httpStatus.NOT_FOUND)
     })
     it("should respond a console with the specified id", async () => {
-        //criar console
+        await createConsole()
         const response = await api.get("/consoles/1")
 
-        expect(response.body).toEqual(expect.objectContaining({
+        expect(response.body).toEqual({
             id: expect.any(Number),
             name: expect.any(String)
-        }))
+        })
     })
 })
 
 describe("POST /consoles", () => {
-    it("should respond with status 400 when body is not present", async () => {
+    it("should respond with status 422 when body is not present", async () => {
         const response = await api.post("/consoles")
 
-        expect(response.status).toBe(httpStatus.BAD_REQUEST)
+        expect(response.status).toBe(httpStatus.UNPROCESSABLE_ENTITY)
     }) 
-    it("should respond with status 400 when body is not valid", async () => {
-        //create a invalid body
-        const body = {blabla:"blabla"}
+    it("should respond with status 422 when body is not valid", async () => {
+        const body = {[faker.word.noun()]:faker.word.noun()}
         const response = await api.post("/consoles").send(body)
 
-        expect(response.status).toBe(httpStatus.BAD_REQUEST)
+        expect(response.status).toBe(httpStatus.UNPROCESSABLE_ENTITY)
     }) 
     describe("when body is valid", () => {
-        //create a valid body
+
+        const generateValidBody = () => ({
+            name: faker.company.name()
+        })
 
         it("should respond with status 409 if console name already exist", async () => {
-            const body = "generateValidBody()"
-            await prisma.game.create({
-                data: body
-            })
+            const console = await createConsole()
+            const body = console
 
-            const response = await api.post("/console").send(body)
+            const response = await api.post("/consoles").send(body)
             expect(response.status).toBe(httpStatus.CONFLICT)
         })
-        it("should respond with status 201 and create a new game", async () => {
-            const body = "generateValidBody()"
-            const response = await api.post("/games").send(body)
+        it("should respond with status 201 and create a new console", async () => {
+            const body = generateValidBody()
+            const response = await api.post("/consoles").send(body)
 
             expect(response.status).toBe(httpStatus.CREATED)
 
-            //find first id do body
-            const game = await prisma.game.findFirst()
-            expect(game).toBeDefined()
+            const console = await prisma.console.findFirst()
+            expect(console).toBeDefined()
         })
     })
 })
@@ -94,8 +102,10 @@ describe("GET /games", () => {
         expect(response.body).toEqual([])
     }) 
     it("should respond a games array", async () => {
-        //criar game
-        //criar game
+        const console1 = await createConsole()
+        const console2 = await createConsole()
+        await createGame(console1.id)
+        await createGame(console2.id)
         const response = await api.get("/games")
 
         expect(response.body).toHaveLength(2)
@@ -116,7 +126,8 @@ describe("GET /games/:id", () => {
         expect(response.status).toBe(httpStatus.NOT_FOUND)
     })
     it("should respond a game with the specified consoleId", async () => {
-        //criar game
+        const console = await createConsole()
+        await createGame(console.id)
         const response = await api.get("/games/1")
 
         expect(response.body).toEqual(expect.objectContaining({
@@ -124,51 +135,54 @@ describe("GET /games/:id", () => {
             title: expect.any(String),
             consoleId: expect.any(Number)
         }))
+        expect(response.body.consoleId).toBe(console.id)
     })
 })
 
 describe("POST /games", () => {
-    it("should respond with status 400 when body is not present", async () => {
+
+    it("should respond with status 422 when body is not present", async () => {
         const response = await api.post("/games")
 
-        expect(response.status).toBe(httpStatus.BAD_REQUEST)
+        expect(response.status).toBe(httpStatus.UNPROCESSABLE_ENTITY)
     }) 
-    it("should respond with status 400 when body is not valid", async () => {
+    it("should respond with status 422 when body is not valid", async () => {
         //create a invalid body
-        const body = {blabla:"blabla"}
+        const body = {[faker.word.noun()]:faker.word.noun()}
         const response = await api.post("/games").send(body)
 
-        expect(response.status).toBe(httpStatus.BAD_REQUEST)
+        expect(response.status).toBe(httpStatus.UNPROCESSABLE_ENTITY)
     }) 
     describe("when body is valid", () => {
-        //create a valid body
+        const generateValidBody = (consoleId: number) => ({
+            title: faker.lorem.sentence(2),
+            consoleId
+        })
 
         it("should respond with status 409 if game title already exist", async () => {
-            const body = "generateValidBody()"
-            await prisma.game.create({
-                data: body
-            })
+            const console = await createConsole()
+            const game = await createGame(console.id)
+            delete game.id
+            const body = game
 
             const response = await api.post("/games").send(body)
             expect(response.status).toBe(httpStatus.CONFLICT)
         })
         it("should respond with status 409 if consoleid does not exist", async () => {
-            const body = "generateValidBody()"
-            body.consoleId = "número aleatório"
-            await prisma.game.create({
-                data: body
-            })
+
+            const body = generateValidBody(faker.datatype.number(100))
 
             const response = await api.post("/games").send(body)
             expect(response.status).toBe(httpStatus.CONFLICT)
         })
         it("should respond with status 201 and create a new game", async () => {
-            const body = "generateValidBody()"
+            const console = await createConsole()
+            const body = generateValidBody(console.id)
+
             const response = await api.post("/games").send(body)
 
             expect(response.status).toBe(httpStatus.CREATED)
 
-            //find first id do body
             const game = await prisma.game.findFirst()
             expect(game).toBeDefined()
         })
